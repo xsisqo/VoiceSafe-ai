@@ -1,51 +1,43 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import os
-from datetime import datetime
+import datetime
 
 app = Flask(__name__)
+
+# väčší upload limit (napr. 50MB)
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
+
 CORS(app)
 
-@app.route("/")
-def home():
-    return "VoiceSafe AI running"
+@app.get("/")
+def root():
+    return "VoiceSafe AI OK ✅", 200
 
-@app.route("/health")
+@app.get("/health")
 def health():
-    return jsonify({"status": "ok", "service": "voicesafe-ai"})
+    return jsonify({"status": "ok", "service": "voicesafe-ai"}), 200
 
-@app.route("/analyze", methods=["POST"])
+@app.post("/analyze")
 def analyze():
-    try:
-        if "file" not in request.files:
-            return jsonify({"status": "error", "message": "No file"}), 400
+    if "file" not in request.files:
+        return jsonify({"status":"error","message":"No file field 'file' provided"}), 400
 
-        file = request.files["file"]
+    f = request.files["file"]
+    filename = f.filename or "unknown"
 
-        # Fake AI analysis (prototype)
-        result = {
-            "status": "success",
-            "message": "File received",
-            "filename": file.filename,
-            "uploaded_at": datetime.utcnow().isoformat(),
-            "ai_voice_prob": 15,
-            "scam_score": 42,
-            "stress_level": 25,
-            "flags": [],
-            "summary": "No strong red flags detected in this sample, but stay cautious."
-        }
+    # PROTOTYPE odpoveď (teraz je to dummy)
+    out = {
+        "status": "success",
+        "message": "File received",
+        "filename": filename,
+        "uploaded_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "ai_voice_prob": 15,
+        "scam_score": 42,
+        "stress_level": 25,
+        "flags": [],
+        "summary": "No strong red flags detected in this sample, but stay cautious."
+    }
+    return jsonify(out), 200
 
-        return jsonify(result)
-
-    except Exception as e:
-        print("AI ERROR:", str(e))
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
-
-
-# 🔥 VERY IMPORTANT FOR RENDER
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000, debug=True)

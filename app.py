@@ -1,40 +1,55 @@
+# ai/app.py
+
+import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 CORS(app)
 
-# IMPORTANT FOR RENDER UPLOADS
-app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024 # 200MB
+@app.get("/")
+def root():
+    return jsonify({"ok": True, "service": "voicesafe-ai"})
 
-@app.route("/")
-def home():
-    return "VoiceSafe AI running"
+@app.get("/health")
+def health():
+    return jsonify({"ok": True})
 
-@app.route("/analyze", methods=["POST"])
+@app.post("/analyze")
 def analyze():
-
+    # Expect multipart/form-data with "file"
     if "file" not in request.files:
         return jsonify({"error": "No file"}), 400
 
-    file = request.files["file"]
+    uploaded = request.files["file"]
+    filename = secure_filename(uploaded.filename or "audio.bin")
+    save_path = os.path.join("/tmp", filename)
 
-    filename = file.filename
-    save_path = f"/tmp/{filename}"
-    file.save(save_path)
+    # IMPORTANT (Render fix): read fully first, then write
+    data = uploaded.read()
+    if not data:
+        return jsonify({"error": "Empty file"}), 400
 
-    # --- DEMO AI RESULT ---
+    with open(save_path, "wb") as f:
+        f.write(data)
+
+    # DEMO RESULT (stable)
     result = {
-        "summary": "No strong red flags detected.",
+        "summary": "No strong red flags detected in this sample, but stay cautious.",
         "ai_probability": 15,
         "stress_level": 25,
         "scam_score": 10,
         "flags": [],
-        "voice_match": "Unknown"
+        "voice_match": "Unknown",
+        "meta": {
+            "filename": filename,
+            "bytes": len(data)
+        }
     }
 
     return jsonify(result)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", "8000"))
+    app.run(host="0.0.0.0", port=port)

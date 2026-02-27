@@ -1,78 +1,267 @@
-# file: AI/queue.py
+# AI/job_queue.py
 import os
+import json
 import time
+import uuid
 from typing import Any, Dict, Optional, Tuple
 
-import redis as redis_lib
+# ============================================================
+# VoiceSafe AI - Job Queue
+# - Works with Redis if REDIS_URL is set
+# - Falls back to in-memory mode if REDIS_URL is missing
+# ============================================================
 
-APP_NAME = "voicesafe-ai"
+APP_PREFIX = os.getenv("APP_PREFIX", "voicesafe")
+REDIS_URL = (os.getenv("REDIS_URL", "") or "").strip()
 
-REDIS_URL = os.environ.get("REDIS_URL", "").strip()
-JOB_TTL_S = int(os.environ.get("JOB_TTL_S", "3600")) # job status/result TTL (1h)
-AUDIO_TTL_S = int(os.environ.get("AUDIO_TTL_S", "900")) # audio bytes TTL (15m)
-QUEUE_NAME = os.environ.get("QUEUE_NAME", "voicesafe:jobs")
+# Rate limit defaults (can be overridden from env)
+RL_WINDOW_S = int(os.getenv("RL_WINDOW_S", "60"))
+RL_MAX_REQ = int(os.getenv("RL_MAX_REQ", "30"))
 
-if not REDIS_URL:
-    raise RuntimeError("REDIS_URL is required for async jobs architecture")
-
-r = redis_lib.from_url(REDIS_URL, decode_responses=False)
-
-
-def qkey_job(job_id: str) -> str:
-    return f"job:{job_id}"
-
-
-def qkey_audio(job_id: str) -> str:
-    return f"audio:{job_id}"
+# Redis keys
+JOBS_KEY = f"{APP_PREFIX}:jobs" # hash: job_id -> json
+AUDIO_KEY = f"{APP_PREFIX}:audio" # hash: job_id -> json (path/meta)
+QUEUE_KEY = f"{APP_PREFIX}:queue" # list: job_id
+DONE_KEY = f"{APP_PREFIX}:done" # list: job_id (optional)
 
 
-def set_job(job_id: str, payload_json: bytes) -> None:
-    r.setex(qkey_job(job_id), JOB_TTL_S, payload_json)
+# ----------------------------
+# In-memory fallback storage
+# ----------------------------
+_mem_jobs: Dict[str, Dict[str, Any]] = {}
+_mem_audio: Dict[str, Dict[str, Any]] = {}
+_mem_queue: list[str] = []
+_mem_done: list[str] = []
+_mem_rate: Dict[str, list[float]] = {} # key -> timestamps
 
 
-def get_job(job_id: str) -> Optional[bytes]:
-    return r.get(qkey_job(job_id))
+# ----------------------------
+# Redis client (lazy)
+# ----------------------------
+_redis = None
 
+def _get_redis():
+    """
+    Returns a redis client if REDIS_URL is provided and redis is available.
+    Otherwise returns None (in-memory fallback).
+    """
+    global _redis
+    if not REDIS_URL:
+        return None
 
-def set_audio(job_id: str, audio_bytes: bytes) -> None:
-    r.setex(qkey_audio(job_id), AUDIO_TTL_S, audio_bytes)
+    if _redis is not None:
+        return _redis
 
-
-def get_audio(job_id: str) -> Optional[bytes]:
-    return r.get(qkey_audio(job_id))
-
-
-def del_audio(job_id: str) -> None:
     try:
-        r.delete(qkey_audio(job_id))
-    except Exception:
-        pass
+        import redis # redis==5.x
+        _redis = redis.Redis.from_url(
+            REDIS_URL,
+            decode_responses=True, # store strings
+            socket_timeout=5,
+            socket_connect_timeout=5,
+            health_check_interval=30,
+        )
+        # quick ping to validate
+        _redis.ping()
+        return _redis
+    except Exception as e:
+        # If Redis misconfigured/unreachable, fall back to memory
+        print(f"⚠️ Redis not available, falling back to memory mode. Reason: {e}")
+        _redis = None
+        return None
 
+
+# ============================================================
+# Rate limiting
+# ============================================================
+
+def rate_limit_allow(
+    key: str,
+    limit: int = RL_MAX_REQ,
+    window_s: int = RL_WINDOW_S,
+) -> bool:
+    """
+    Simple fixed-window limiter:
+    - Redis: INCR + EXPIRE
+    - Memory: timestamps list in window
+    """
+    r = _get_redis()
+    bucket = f"{APP_PREFIX}:rl:{key}:{int(time.time() // window_s)}"
+
+    if r:
+        try:
+            val = r.incr(bucket)
+            if val == 1:
+                r.expire(bucket, window_s + 2)
+            return val <= limit
+        except Exception as e:
+            print(f"⚠️ Redis rate-limit failed, using memory. Reason: {e}")
+
+    # Memory fallback: sliding window timestamps
+    now = time.time()
+    arr = _mem_rate.get(key, [])
+    arr = [t for t in arr if now - t < window_s]
+    if len(arr) >= limit:
+        _mem_rate[key] = arr
+        return False
+    arr.append(now)
+    _mem_rate[key] = arr
+    return True
+
+
+# ============================================================
+# Job storage
+# ============================================================
+
+def _json_dumps(obj: Any) -> str:
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+def _json_loads(s: str) -> Any:
+    return json.loads(s)
+
+def set_job(job_id: str, data: Dict[str, Any]) -> None:
+    """
+    Store job metadata.
+    """
+    r = _get_redis()
+    if r:
+        try:
+            r.hset(JOBS_KEY, job_id, _json_dumps(data))
+            return
+        except Exception as e:
+            print(f"⚠️ Redis set_job failed, using memory. Reason: {e}")
+
+    _mem_jobs[job_id] = data
+
+
+def get_job(job_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch job metadata.
+    """
+    r = _get_redis()
+    if r:
+        try:
+            val = r.hget(JOBS_KEY, job_id)
+            if not val:
+                return None
+            return _json_loads(val)
+        except Exception as e:
+            print(f"⚠️ Redis get_job failed, using memory. Reason: {e}")
+
+    return _mem_jobs.get(job_id)
+
+
+def set_audio(job_id: str, audio_path: str, extra: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Store audio location for a job.
+    We store a JSON blob with at least {"path": "..."}.
+    """
+    payload: Dict[str, Any] = {"path": audio_path}
+    if extra:
+        payload.update(extra)
+
+    r = _get_redis()
+    if r:
+        try:
+            r.hset(AUDIO_KEY, job_id, _json_dumps(payload))
+            return
+        except Exception as e:
+            print(f"⚠️ Redis set_audio failed, using memory. Reason: {e}")
+
+    _mem_audio[job_id] = payload
+
+
+def get_audio(job_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch audio info for a job.
+    """
+    r = _get_redis()
+    if r:
+        try:
+            val = r.hget(AUDIO_KEY, job_id)
+            if not val:
+                return None
+            return _json_loads(val)
+        except Exception as e:
+            print(f"⚠️ Redis get_audio failed, using memory. Reason: {e}")
+
+    return _mem_audio.get(job_id)
+
+
+# ============================================================
+# Queue operations
+# ============================================================
 
 def enqueue(job_id: str) -> None:
-    # Use LPUSH + worker BLPOP
-    r.lpush(QUEUE_NAME, job_id.encode("utf-8"))
-
-
-def dequeue_block(timeout_s: int = 30) -> Optional[str]:
-    # BLPOP returns (queue_name, value)
-    item = r.blpop(QUEUE_NAME, timeout=timeout_s)
-    if not item:
-        return None
-    _, val = item
-    try:
-        return val.decode("utf-8")
-    except Exception:
-        return None
-
-
-def rate_limit_allow(ip: str, window_s: int, max_req: int) -> bool:
     """
-    Simple Redis rate limit: INCR + EXPIRE, per IP per window.
+    Enqueue a job id for processing (worker consumes this).
     """
-    key = f"rl:{ip}:{int(time.time() // window_s)}"
-    pipe = r.pipeline()
-    pipe.incr(key, 1)
-    pipe.expire(key, window_s + 5)
-    count, _ = pipe.execute()
-    return int(count) <= int(max_req)
+    r = _get_redis()
+    if r:
+        try:
+            r.rpush(QUEUE_KEY, job_id)
+            return
+        except Exception as e:
+            print(f"⚠️ Redis enqueue failed, using memory. Reason: {e}")
+
+    _mem_queue.append(job_id)
+
+
+def dequeue(block: bool = False, timeout_s: int = 10) -> Optional[str]:
+    """
+    Pop next job id (for worker).
+    - Redis: BLPOP (blocking) or LPOP
+    - Memory: pop(0)
+    """
+    r = _get_redis()
+    if r:
+        try:
+            if block:
+                item = r.blpop(QUEUE_KEY, timeout=timeout_s)
+                if not item:
+                    return None
+                _, job_id = item
+                return job_id
+            return r.lpop(QUEUE_KEY)
+        except Exception as e:
+            print(f"⚠️ Redis dequeue failed, using memory. Reason: {e}")
+
+    if not _mem_queue:
+        return None
+    return _mem_queue.pop(0)
+
+
+def mark_done(job_id: str) -> None:
+    """
+    Optional: track completed jobs.
+    """
+    r = _get_redis()
+    if r:
+        try:
+            r.rpush(DONE_KEY, job_id)
+            return
+        except Exception as e:
+            print(f"⚠️ Redis mark_done failed, using memory. Reason: {e}")
+
+    _mem_done.append(job_id)
+
+
+# ============================================================
+# Helpers
+# ============================================================
+
+def new_job_id(prefix: str = "job") -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+def health() -> Dict[str, Any]:
+    """
+    Small health helper for /health endpoint.
+    """
+    r = _get_redis()
+    if r:
+        try:
+            r.ping()
+            return {"ok": True, "mode": "redis", "redis": True}
+        except Exception as e:
+            return {"ok": True, "mode": "memory", "redis": False, "note": str(e)}
+    return {"ok": True, "mode": "memory", "redis": False}

@@ -2,7 +2,7 @@ services:
   - type: web
     name: voicesafe-ai
     env: docker
-    rootDir: AI
+    rootDir: .
     plan: starter
     autoDeploy: true
     healthCheckPath: /health

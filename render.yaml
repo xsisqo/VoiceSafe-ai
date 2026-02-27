@@ -68,6 +68,7 @@ services:
   - type: redis
     name: voicesafe-ai-redis
     plan: starter
+    ipAllowList: [] # 👈 POVINNÉ pre Redis
 
 databases:
   - name: voicesafe-ai-db

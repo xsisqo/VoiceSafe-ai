@@ -5,7 +5,7 @@ services:
     rootDir: AI
     plan: starter
     autoDeploy: true
-    ipAllowList: [] # 👈 PRIDANÉ
+    ipAllowList: []
     healthCheckPath: /health
     envVars:
       - key: APP_VERSION
@@ -44,7 +44,6 @@ services:
     rootDir: AI
     plan: starter
     autoDeploy: true
-    ipAllowList: [] # 👈 PRIDANÉ
     dockerCommand: python worker.py
     envVars:
       - key: APP_VERSION
@@ -70,6 +69,7 @@ services:
   - type: redis
     name: voicesafe-ai-redis
     plan: starter
+    ipAllowList: []
 
 databases:
   - name: voicesafe-ai-db

@@ -1,9 +1,85 @@
 services:
   - type: web
     name: voicesafe-ai
-    env: python
-    buildCommand: |
-      pip install -r requirements.txt
-      apt-get update
-      apt-get install -y ffmpeg
-    startCommand: python app.py
+    env: docker
+    rootDir: AI
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: APP_VERSION
+        value: "4.0.0-async"
+      - key: MAX_UPLOAD_MB
+        value: "25"
+      - key: TARGET_SR
+        value: "16000"
+      - key: MAX_DURATION_S
+        value: "120"
+      - key: MIN_DURATION_S
+        value: "0.6"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: RL_WINDOW_S
+        value: "60"
+      - key: RL_MAX_REQ
+        value: "30"
+      - key: JOB_TTL_S
+        value: "3600"
+      - key: AUDIO_TTL_S
+        value: "900"
+      - key: QUEUE_NAME
+        value: "voicesafe:jobs"
+      - key: API_KEY
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: voicesafe-ai-redis
+          type: redis
+          property: connectionString
+      - key: DATABASE_URL
+        fromDatabase:
+          name: voicesafe-ai-db
+          property: connectionString
+
+  - type: worker
+    name: voicesafe-ai-worker
+    env: docker
+    rootDir: AI
+    plan: starter
+    autoDeploy: true
+    # run worker instead of uvicorn
+    dockerCommand: python worker.py
+    envVars:
+      - key: APP_VERSION
+        value: "4.0.0-async"
+      - key: TARGET_SR
+        value: "16000"
+      - key: MAX_DURATION_S
+        value: "120"
+      - key: MIN_DURATION_S
+        value: "0.6"
+      - key: WORKER_BLPOP_TIMEOUT_S
+        value: "30"
+      - key: JOB_TTL_S
+        value: "3600"
+      - key: AUDIO_TTL_S
+        value: "900"
+      - key: QUEUE_NAME
+        value: "voicesafe:jobs"
+      - key: REDIS_URL
+        fromService:
+          name: voicesafe-ai-redis
+          type: redis
+          property: connectionString
+      - key: DATABASE_URL
+        fromDatabase:
+          name: voicesafe-ai-db
+          property: connectionString
+
+  - type: redis
+    name: voicesafe-ai-redis
+    plan: starter
+
+databases:
+  - name: voicesafe-ai-db
+    plan: starter

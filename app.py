@@ -1,118 +1,160 @@
+# file: AI/app.py
 import os
-import numpy as np
-import librosa
-import soundfile as sf
+import json
+import time
+import uuid
+import shutil
+from typing import Any, Dict, Optional
 
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-from werkzeug.utils import secure_filename
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 
-app = Flask(__name__)
-CORS(app)
+from queue import (
+    set_job, get_job, set_audio, enqueue,
+    rate_limit_allow,
+)
+from db import db_init, list_cases
+
+APP_NAME = "voicesafe-ai"
+VERSION = os.environ.get("APP_VERSION", "4.0.0-async")
+
+MAX_MB = int(os.environ.get("MAX_UPLOAD_MB", "25"))
+MAX_BYTES = MAX_MB * 1024 * 1024
+
+# TTL & queue settings are in queue.py via env
+RL_WINDOW_S = int(os.environ.get("RL_WINDOW_S", "60"))
+RL_MAX_REQ = int(os.environ.get("RL_MAX_REQ", "30"))
+
+API_KEY = os.environ.get("API_KEY", "").strip() # optional auth (x-api-key header)
+
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").strip()
+ALLOWED_ORIGINS = ["*"] if CORS_ORIGINS == "*" else [x.strip() for x in CORS_ORIGINS.split(",") if x.strip()]
+
+START_TIME = time.time()
 
 
-# ---------------------------
-# HEALTH
-# ---------------------------
+def _check_api_key(request: Request) -> None:
+    if not API_KEY:
+        return
+    got = request.headers.get("x-api-key", "").strip()
+    if got != API_KEY:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+def _get_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for", "").strip()
+    if xff:
+        return xff.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+app = FastAPI(title=APP_NAME, version=VERSION)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# init DB if present
+try:
+    db_init()
+except Exception:
+    pass
+
+
 @app.get("/")
-def root():
-    return jsonify({"ok": True, "service": "voicesafe-ai"})
+def root() -> Dict[str, Any]:
+    return {"ok": True, "service": APP_NAME, "version": VERSION}
 
 
 @app.get("/health")
-def health():
-    return jsonify({"ok": True})
-
-
-# ---------------------------
-# AUDIO FEATURE ANALYSIS
-# ---------------------------
-def analyze_audio(path):
-
-    # load audio
-    y, sr = librosa.load(path, sr=16000, mono=True)
-
-    duration = librosa.get_duration(y=y, sr=sr)
-
-    # basic features
-    rms = np.mean(librosa.feature.rms(y=y))
-    zcr = np.mean(librosa.feature.zero_crossing_rate(y))
-    spectral_centroid = np.mean(librosa.feature.spectral_centroid(y=y, sr=sr))
-
-    # pitch stability (AI voices often too stable)
-    pitches, magnitudes = librosa.piptrack(y=y, sr=sr)
-    pitch_values = pitches[magnitudes > np.median(magnitudes)]
-
-    if len(pitch_values) > 0:
-        pitch_std = np.std(pitch_values)
-    else:
-        pitch_std = 0
-
-    # ---------------------------
-    # HEURISTIC SCORING
-    # ---------------------------
-
-    # AI voice tends to:
-    # - lower pitch variance
-    # - stable energy
-    # - smoother waveform
-
-    ai_probability = 100 - min(100, pitch_std * 10)
-
-    stress_level = min(100, zcr * 1000)
-
-    scam_score = min(
-        100,
-        (ai_probability * 0.6 + stress_level * 0.4)
-    )
-
-    flags = []
-
-    if ai_probability > 70:
-        flags.append("Synthetic voice characteristics")
-
-    if stress_level > 50:
-        flags.append("High vocal stress detected")
-
+def health() -> Dict[str, Any]:
+    ffmpeg_ok = shutil.which("ffmpeg") is not None
     return {
-        "summary": "Audio analyzed using acoustic signal heuristics.",
-        "ai_probability": round(float(ai_probability), 1),
-        "stress_level": round(float(stress_level), 1),
-        "scam_score": round(float(scam_score), 1),
-        "flags": flags,
+        "ok": True,
+        "service": APP_NAME,
+        "version": VERSION,
+        "ffmpeg": ffmpeg_ok,
+        "max_upload_mb": MAX_MB,
     }
 
 
-# ---------------------------
-# ANALYZE ENDPOINT
-# ---------------------------
-@app.post("/analyze")
-def analyze():
+@app.post("/jobs")
+async def create_job(request: Request, file: UploadFile = File(...)) -> Dict[str, Any]:
+    _check_api_key(request)
+    ip = _get_ip(request)
 
-    if "file" not in request.files:
-        return jsonify({"error": "Missing file"}), 400
+    # Redis rate-limit (per IP)
+    if not rate_limit_allow(ip, RL_WINDOW_S, RL_MAX_REQ):
+        raise HTTPException(status_code=429, detail="rate_limited")
 
-    uploaded = request.files["file"]
+    if not file:
+        raise HTTPException(status_code=400, detail="missing_file")
 
-    filename = secure_filename(uploaded.filename or "audio.wav")
-    path = os.path.join("/tmp", filename)
+    job_id = str(uuid.uuid4())
+    filename = (file.filename or "audio.bin").replace("\\", "_").replace("/", "_").strip() or "audio.bin"
 
-    uploaded.save(path)
+    # Stream upload into memory bytes (bounded) then store to Redis with TTL
+    size = 0
+    buf = bytearray()
+    while True:
+        chunk = await file.read(1024 * 1024) # 1MB
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > MAX_BYTES:
+            raise HTTPException(status_code=413, detail=f"file_too_large (max {MAX_MB}MB)")
+        buf.extend(chunk)
+
+    if size <= 0:
+        raise HTTPException(status_code=400, detail="empty_file")
+
+    # Store audio bytes in Redis for worker (TTL)
+    set_audio(job_id, bytes(buf))
+
+    # Create job record
+    payload = {
+        "id": job_id,
+        "status": "queued",
+        "created_at": int(time.time()),
+        "ip": ip,
+        "filename": filename,
+        "bytes": size,
+    }
+    set_job(job_id, json.dumps(payload).encode("utf-8"))
+
+    # Enqueue for worker
+    enqueue(job_id)
+
+    return {"ok": True, "job_id": job_id, "status": "queued"}
+
+
+@app.get("/jobs/{job_id}")
+def get_job_status(request: Request, job_id: str) -> Dict[str, Any]:
+    _check_api_key(request)
+
+    raw = get_job(job_id)
+    if not raw:
+        raise HTTPException(status_code=404, detail="job_not_found")
 
     try:
-        result = analyze_audio(path)
-        return jsonify(result)
-
-    except Exception as e:
-        return jsonify({
-            "error": "analysis_failed",
-            "message": str(e)
-        }), 500
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return {"id": job_id, "status": "unknown", "raw": raw[:200].decode("utf-8", "ignore")}
 
 
-# ---------------------------
-# START
-# ---------------------------
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    app.run(host="0.0.0.0", port=port)
+@app.get("/cases")
+def cases(request: Request, limit: int = 50) -> Dict[str, Any]:
+    _check_api_key(request)
+
+    try:
+        items = list_cases(limit=limit)
+        return {"ok": True, "items": items}
+    except Exception:
+        # If DB not configured, just return empty
+        return {"ok": True, "items": [], "note": "DATABASE_URL not configured or DB unavailable"}

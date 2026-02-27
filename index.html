@@ -1,298 +1,256 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>VoiceSafe – Anti-Scam Voice Analyzer</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>VoiceSafe – AI Voice Risk Analyzer</title>
 
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
 
-  <style>
-    /* tiny polish */
-    .glass { backdrop-filter: blur(10px); background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); }
-    .shadow-soft { box-shadow: 0 18px 60px rgba(0,0,0,.35); }
-    .btn:disabled { opacity: .45; cursor: not-allowed; }
-    .progressBar { height: 10px; border-radius: 9999px; overflow: hidden; background: rgba(255,255,255,.12); }
-    .progressFill { height: 100%; width: 0%; background: linear-gradient(90deg, #f59e0b, #fde68a); transition: width .35s ease; }
-  </style>
+<style>
+.glass { backdrop-filter: blur(12px); background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); }
+.shadow-soft { box-shadow: 0 18px 60px rgba(0,0,0,.35); }
+.btn:disabled { opacity:.45; cursor:not-allowed; }
+.progressBar { height:10px; border-radius:9999px; overflow:hidden; background:rgba(255,255,255,.12); }
+.progressFill { height:100%; width:0%; background:linear-gradient(90deg,#f59e0b,#fde68a); transition:width .35s ease; }
+.highRisk { color:#ef4444; }
+.mediumRisk { color:#f59e0b; }
+.lowRisk { color:#22c55e; }
+</style>
 </head>
 
 <body class="min-h-screen text-white bg-slate-950">
-  <!-- background -->
-  <div class="fixed inset-0 -z-10">
-    <div class="absolute inset-0 bg-gradient-to-b from-slate-950 via-slate-950 to-black"></div>
-    <div class="absolute inset-0 opacity-40"
-      style="background:
-      radial-gradient(800px 500px at 20% 15%, rgba(245,158,11,.35), transparent 60%),
-      radial-gradient(700px 450px at 85% 25%, rgba(56,189,248,.20), transparent 60%),
-      radial-gradient(900px 600px at 60% 85%, rgba(168,85,247,.18), transparent 60%);">
-    </div>
-  </div>
 
-  <main class="max-w-5xl mx-auto px-4 py-10">
-    <!-- header -->
-    <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
-      <div>
-        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full glass">
-          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-          <span class="text-sm text-slate-200">Global prototype</span>
-        </div>
+<div class="fixed inset-0 -z-10">
+<div class="absolute inset-0 bg-gradient-to-b from-slate-950 via-slate-950 to-black"></div>
+</div>
 
-        <h1 class="mt-4 text-3xl md:text-4xl font-extrabold tracking-tight">
-          <span class="text-amber-300">VoiceSafe</span> – Anti-Scam Voice Analyzer
-        </h1>
-        <p class="mt-2 text-slate-200 max-w-2xl">
-          Upload a voice sample (or record one) and get a quick risk signal. This is a prototype for a global anti-scam voice registry.
-        </p>
-      </div>
+<main class="max-w-5xl mx-auto px-4 py-10">
 
-      <!-- environment switch -->
-      <div class="glass rounded-2xl p-4 shadow-soft">
-        <div class="text-xs text-slate-300 mb-2">Environment</div>
-        <div class="flex items-center gap-2">
-          <button id="btnLocal" class="btn px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 transition text-sm">
-            <i class="fa-solid fa-laptop-code mr-2"></i>LOCAL
-          </button>
-          <button id="btnProd" class="btn px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 transition text-sm border border-amber-300/25">
-            <i class="fa-solid fa-globe mr-2"></i>PROD
-          </button>
-        </div>
-        <div class="mt-2 text-xs text-slate-400">
-          Backend: <span id="backendLabel" class="text-slate-200"></span>
-        </div>
-      </div>
-    </div>
+<div class="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
 
-    <!-- cards -->
-    <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- upload card -->
-      <section class="glass rounded-3xl p-6 shadow-soft">
-        <h2 class="text-xl font-bold flex items-center gap-2">
-          <i class="fa-solid fa-file-audio text-amber-300"></i> Analyze a sample
-        </h2>
-        <p class="mt-1 text-sm text-slate-300">
-          Supported: mp3, wav, m4a, mp4, webm (max ~25MB).
-        </p>
+<div>
+<h1 class="text-3xl md:text-4xl font-extrabold tracking-tight">
+<span class="text-amber-300">VoiceSafe</span> – AI Voice Risk Analyzer
+</h1>
+<p class="mt-2 text-slate-300 max-w-2xl">
+Upload a voice sample and receive scam probability signals. Prototype build.
+</p>
+</div>
 
-        <div class="mt-5 space-y-4">
-          <div>
-            <label class="block text-sm text-slate-300 mb-2">Upload audio</label>
-            <input id="fileInput" type="file" accept="audio/*,video/*"
-              class="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-400/60" />
-            <div class="mt-2 text-xs text-slate-400" id="fileHint">No file selected.</div>
-          </div>
+<div class="glass rounded-2xl p-4 shadow-soft">
+<div class="text-xs text-slate-400 mb-1">Backend</div>
+<div id="backendLabel" class="text-sm text-amber-300 font-mono"></div>
+</div>
 
-          <div class="flex flex-wrap gap-3">
-            <button id="btnAnalyze" class="btn px-5 py-3 rounded-xl bg-amber-500 text-black font-semibold hover:bg-amber-400 transition">
-              <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>Analyze
-            </button>
-            <button id="btnClear" class="btn px-5 py-3 rounded-xl bg-white/10 hover:bg-white/15 transition">
-              <i class="fa-solid fa-broom mr-2"></i>Clear
-            </button>
-          </div>
+</div>
 
-          <div class="space-y-2">
-            <div class="text-xs text-slate-300 flex items-center justify-between">
-              <span>Progress</span>
-              <span id="progressText">0%</span>
-            </div>
-            <div class="progressBar">
-              <div id="progressFill" class="progressFill"></div>
-            </div>
-          </div>
+<div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-          <div id="errorBox" class="hidden mt-3 p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-100 text-sm"></div>
-        </div>
-      </section>
+<section class="glass rounded-3xl p-6 shadow-soft">
+<h2 class="text-xl font-bold mb-4">
+<i class="fa-solid fa-file-audio text-amber-300 mr-2"></i>Analyze sample
+</h2>
 
-      <!-- result card -->
-      <section class="glass rounded-3xl p-6 shadow-soft">
-        <h2 class="text-xl font-bold flex items-center gap-2">
-          <i class="fa-solid fa-chart-line text-amber-300"></i> Results
-        </h2>
-        <p class="mt-1 text-sm text-slate-300">
-          Prototype signals only — not a guarantee. Always verify identity via trusted channels.
-        </p>
+<input id="fileInput" type="file" accept="audio/*,video/*"
+class="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-400/60"/>
 
-        <div class="mt-5 grid grid-cols-1 gap-4">
-          <div class="glass rounded-2xl p-4">
-            <div class="text-xs text-slate-400">Scam score</div>
-            <div class="mt-1 text-3xl font-extrabold"><span id="scamScore">–</span><span class="text-slate-400 text-base font-semibold">%</span></div>
-          </div>
+<div id="fileHint" class="mt-2 text-xs text-slate-400">No file selected</div>
 
-          <div class="glass rounded-2xl p-4">
-            <div class="text-xs text-slate-400">AI voice probability</div>
-            <div class="mt-1 text-3xl font-extrabold"><span id="aiProb">–</span><span class="text-slate-400 text-base font-semibold">%</span></div>
-          </div>
+<div class="flex gap-3 mt-4">
+<button id="btnAnalyze"
+class="btn px-5 py-3 rounded-xl bg-amber-500 text-black font-semibold hover:bg-amber-400 transition">
+Analyze
+</button>
 
-          <div class="glass rounded-2xl p-4">
-            <div class="text-xs text-slate-400">Stress level</div>
-            <div class="mt-1 text-3xl font-extrabold"><span id="stress">–</span><span class="text-slate-400 text-base font-semibold">%</span></div>
-          </div>
+<button id="btnClear"
+class="btn px-5 py-3 rounded-xl bg-white/10 hover:bg-white/15 transition">
+Clear
+</button>
+</div>
 
-          <div class="glass rounded-2xl p-4">
-            <div class="text-xs text-slate-400">Summary</div>
-            <div class="mt-2 text-slate-100" id="summaryText">Upload a sample to see results.</div>
-          </div>
-        </div>
-      </section>
-    </div>
+<div class="mt-4">
+<div class="flex justify-between text-xs text-slate-400">
+<span>Progress</span>
+<span id="progressText">0%</span>
+</div>
+<div class="progressBar mt-1">
+<div id="progressFill" class="progressFill"></div>
+</div>
+</div>
 
-    <!-- footer -->
-    <div class="mt-10 text-xs text-slate-500">
-      © VoiceSafe prototype • Built for global anti-scam awareness.
-    </div>
-  </main>
+<div id="errorBox"
+class="hidden mt-4 p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-100 text-sm">
+</div>
 
-  <script>
-    // ---------------------------
-    // CONFIG (LOCAL vs PROD)
-    // ---------------------------
-    const BACKENDS = {
-      LOCAL: "http://127.0.0.1:10000",
-      PROD: "https://voicesafe-backend-1.onrender.com"
-    };
+</section>
 
-    // Default is PROD (worldwide)
-    let backendBase = BACKENDS.PROD;
+<section class="glass rounded-3xl p-6 shadow-soft">
+<h2 class="text-xl font-bold mb-4">
+<i class="fa-solid fa-chart-line text-amber-300 mr-2"></i>Results
+</h2>
 
-    // ---------------------------
-    // UI refs
-    // ---------------------------
-    const fileInput = document.getElementById("fileInput");
-    const fileHint = document.getElementById("fileHint");
-    const btnAnalyze = document.getElementById("btnAnalyze");
-    const btnClear = document.getElementById("btnClear");
-    const btnLocal = document.getElementById("btnLocal");
-    const btnProd = document.getElementById("btnProd");
-    const backendLabel = document.getElementById("backendLabel");
+<div class="space-y-4">
 
-    const scamScoreEl = document.getElementById("scamScore");
-    const aiProbEl = document.getElementById("aiProb");
-    const stressEl = document.getElementById("stress");
-    const summaryText = document.getElementById("summaryText");
+<div>
+<div class="text-xs text-slate-400">Scam Score</div>
+<div id="scamScore" class="text-3xl font-extrabold">–</div>
+</div>
 
-    const errorBox = document.getElementById("errorBox");
-    const progressFill = document.getElementById("progressFill");
-    const progressText = document.getElementById("progressText");
+<div>
+<div class="text-xs text-slate-400">AI Voice Probability</div>
+<div id="aiProb" class="text-3xl font-extrabold">–</div>
+</div>
 
-    // ---------------------------
-    // Helpers
-    // ---------------------------
-    function setBackend(mode) {
-      backendBase = BACKENDS[mode];
-      backendLabel.textContent = backendBase;
+<div>
+<div class="text-xs text-slate-400">Stress Level</div>
+<div id="stress" class="text-3xl font-extrabold">–</div>
+</div>
 
-      // Visual cue
-      if (mode === "LOCAL") {
-        btnLocal.classList.add("bg-amber-500/20", "border", "border-amber-300/25");
-        btnProd.classList.remove("bg-amber-500/20", "border", "border-amber-300/25");
-      } else {
-        btnProd.classList.add("bg-amber-500/20", "border", "border-amber-300/25");
-        btnLocal.classList.remove("bg-amber-500/20", "border", "border-amber-300/25");
-      }
-    }
+<div>
+<div class="text-xs text-slate-400">Summary</div>
+<div id="summaryText" class="mt-2 text-slate-200">
+Upload sample to see analysis.
+</div>
+</div>
 
-    function setError(msg) {
-      if (!msg) {
-        errorBox.classList.add("hidden");
-        errorBox.textContent = "";
-        return;
-      }
-      errorBox.textContent = msg;
-      errorBox.classList.remove("hidden");
-    }
+</div>
+</section>
 
-    function setProgress(p) {
-      const clamped = Math.max(0, Math.min(100, p));
-      progressFill.style.width = clamped + "%";
-      progressText.textContent = clamped + "%";
-    }
+</div>
 
-    function resetResults() {
-      scamScoreEl.textContent = "–";
-      aiProbEl.textContent = "–";
-      stressEl.textContent = "–";
-      summaryText.textContent = "Upload a sample to see results.";
-    }
+</main>
 
-    // ---------------------------
-    // Events
-    // ---------------------------
-    btnLocal.addEventListener("click", () => setBackend("LOCAL"));
-    btnProd.addEventListener("click", () => setBackend("PROD"));
+<script>
+const BACKEND = "https://voicesafe-backend-1.onrender.com";
+const MAX_SIZE_MB = 25;
 
-    fileInput.addEventListener("change", () => {
-      setError("");
-      const f = fileInput.files && fileInput.files[0];
-      fileHint.textContent = f ? `Selected: ${f.name} (${Math.round(f.size / 1024)} KB)` : "No file selected.";
-      btnAnalyze.disabled = !f;
-    });
+const fileInput = document.getElementById("fileInput");
+const fileHint = document.getElementById("fileHint");
+const btnAnalyze = document.getElementById("btnAnalyze");
+const btnClear = document.getElementById("btnClear");
+const errorBox = document.getElementById("errorBox");
+const progressFill = document.getElementById("progressFill");
+const progressText = document.getElementById("progressText");
 
-    btnClear.addEventListener("click", () => {
-      fileInput.value = "";
-      fileHint.textContent = "No file selected.";
-      setError("");
-      setProgress(0);
-      resetResults();
-      btnAnalyze.disabled = true;
-    });
+const scamScoreEl = document.getElementById("scamScore");
+const aiProbEl = document.getElementById("aiProb");
+const stressEl = document.getElementById("stress");
+const summaryText = document.getElementById("summaryText");
 
-    btnAnalyze.addEventListener("click", async () => {
-      const f = fileInput.files && fileInput.files[0];
-      if (!f) return;
+document.getElementById("backendLabel").textContent = BACKEND;
 
-      setError("");
-      setProgress(10);
-      btnAnalyze.disabled = true;
+function setProgress(v){
+v=Math.max(0,Math.min(100,v));
+progressFill.style.width=v+"%";
+progressText.textContent=v+"%";
+}
 
-      try {
-        const form = new FormData();
-        form.append("file", f);
+function setError(msg){
+if(!msg){
+errorBox.classList.add("hidden");
+errorBox.textContent="";
+return;
+}
+errorBox.textContent=msg;
+errorBox.classList.remove("hidden");
+}
 
-        setProgress(25);
+function riskColor(el,val){
+el.classList.remove("highRisk","mediumRisk","lowRisk");
+if(val>=70) el.classList.add("highRisk");
+else if(val>=40) el.classList.add("mediumRisk");
+else el.classList.add("lowRisk");
+}
 
-        const resp = await fetch(`${backendBase}/upload`, {
-          method: "POST",
-          body: form
-        });
+btnAnalyze.disabled=true;
 
-        if (!resp.ok) {
-          const text = await resp.text().catch(() => "");
-          throw new Error(`HTTP error ${resp.status}. ${text}`);
-        }
+fileInput.addEventListener("change",()=>{
+setError("");
+const f=fileInput.files[0];
+if(!f){ btnAnalyze.disabled=true; return; }
 
-        setProgress(70);
+const sizeMB=f.size/1024/1024;
+if(sizeMB>MAX_SIZE_MB){
+setError("File too large (max 25MB)");
+btnAnalyze.disabled=true;
+return;
+}
 
-        const data = await resp.json();
+fileHint.textContent=`Selected: ${f.name} (${sizeMB.toFixed(2)} MB)`;
+btnAnalyze.disabled=false;
+});
 
-        // Expect numbers
-        const scam = Number(data.scam_score);
-        const ai = Number(data.ai_voice_prob);
-        const stress = Number(data.stress_level);
+btnClear.addEventListener("click",()=>{
+fileInput.value="";
+fileHint.textContent="No file selected";
+btnAnalyze.disabled=true;
+setProgress(0);
+setError("");
+scamScoreEl.textContent="–";
+aiProbEl.textContent="–";
+stressEl.textContent="–";
+summaryText.textContent="Upload sample to see analysis.";
+});
 
-        scamScoreEl.textContent = Number.isFinite(scam) ? scam : 0;
-        aiProbEl.textContent = Number.isFinite(ai) ? ai : 0;
-        stressEl.textContent = Number.isFinite(stress) ? stress : 0;
+btnAnalyze.addEventListener("click",async()=>{
+const f=fileInput.files[0];
+if(!f) return;
 
-        summaryText.textContent = data.summary || data.message || "Done.";
+btnAnalyze.disabled=true;
+setProgress(10);
+setError("");
 
-        setProgress(100);
-      } catch (e) {
-        setError(e.message || "Analyze failed.");
-        setProgress(0);
-      } finally {
-        const f2 = fileInput.files && fileInput.files[0];
-        btnAnalyze.disabled = !f2;
-      }
-    });
+const controller=new AbortController();
+const timeout=setTimeout(()=>controller.abort(),60000);
 
-    // Init
-    resetResults();
-    setBackend("PROD");
-    btnAnalyze.disabled = true;
-    setProgress(0);
-  </script>
+try{
+const form=new FormData();
+form.append("file",f);
+
+setProgress(30);
+
+const resp=await fetch(`${BACKEND}/upload`,{
+method:"POST",
+body:form,
+signal:controller.signal
+});
+
+if(!resp.ok) throw new Error("Server error "+resp.status);
+
+setProgress(70);
+
+const data=await resp.json();
+
+const scam=Math.round(Number(data.scam_score)||0);
+const ai=Math.round(Number(data.ai_voice_prob)||0);
+const stress=Math.round(Number(data.stress_level)||0);
+
+scamScoreEl.textContent=scam+"%";
+aiProbEl.textContent=ai+"%";
+stressEl.textContent=stress+"%";
+
+riskColor(scamScoreEl,scam);
+riskColor(aiProbEl,ai);
+riskColor(stressEl,stress);
+
+summaryText.textContent=data.summary || "Analysis completed.";
+
+setProgress(100);
+
+}catch(e){
+if(e.name==="AbortError"){
+setError("Server timeout (Render sleeping?) Try again.");
+}else{
+setError(e.message || "Analyze failed");
+}
+setProgress(0);
+}
+clearTimeout(timeout);
+btnAnalyze.disabled=false;
+});
+</script>
+
 </body>
 </html>

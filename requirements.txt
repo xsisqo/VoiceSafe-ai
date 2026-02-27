@@ -1,4 +1,6 @@
-Flask==3.0.3
-flask-cors==4.0.1
-Werkzeug==3.0.3
-gunicorn==22.0.0
+flask==3.0.2
+flask-cors==4.0.0
+numpy==1.26.4
+librosa==0.10.1
+soundfile==0.12.1
+gunicorn==21.2.0

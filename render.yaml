@@ -5,7 +5,6 @@ services:
     rootDir: AI
     plan: starter
     autoDeploy: true
-    ipAllowList: []
     healthCheckPath: /health
     envVars:
       - key: APP_VERSION
@@ -69,8 +68,7 @@ services:
   - type: redis
     name: voicesafe-ai-redis
     plan: starter
-    ipAllowList: []
 
 databases:
   - name: voicesafe-ai-db
-    plan: starter
+    plan: basic-256mb

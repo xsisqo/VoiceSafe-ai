@@ -5,6 +5,7 @@ services:
     rootDir: AI
     plan: starter
     autoDeploy: true
+    ipAllowList: [] # 👈 PRIDANÉ
     healthCheckPath: /health
     envVars:
       - key: APP_VERSION
@@ -13,10 +14,6 @@ services:
         value: "25"
       - key: TARGET_SR
         value: "16000"
-      - key: MAX_DURATION_S
-        value: "120"
-      - key: MIN_DURATION_S
-        value: "0.6"
       - key: CORS_ORIGINS
         value: "*"
       - key: RL_WINDOW_S
@@ -47,19 +44,13 @@ services:
     rootDir: AI
     plan: starter
     autoDeploy: true
-    # run worker instead of uvicorn
+    ipAllowList: [] # 👈 PRIDANÉ
     dockerCommand: python worker.py
     envVars:
       - key: APP_VERSION
         value: "4.0.0-async"
       - key: TARGET_SR
         value: "16000"
-      - key: MAX_DURATION_S
-        value: "120"
-      - key: MIN_DURATION_S
-        value: "0.6"
-      - key: WORKER_BLPOP_TIMEOUT_S
-        value: "30"
       - key: JOB_TTL_S
         value: "3600"
       - key: AUDIO_TTL_S

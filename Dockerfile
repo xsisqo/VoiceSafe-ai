@@ -1,4 +1,4 @@
-# ---------- BASE ----------
+# -------- BASE --------
 FROM python:3.11-slim
 
 # System deps
@@ -10,17 +10,18 @@ RUN apt-get update && apt-get install -y \
 # Workdir
 WORKDIR /app
 
-# Copy requirements
+# Copy requirements first (cache optimization)
 COPY requirements.txt .
 
+# FIX pkg_resources error
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy ALL project files (current folder)
+# Copy project
 COPY . .
 
-# Render provides PORT env
+# Render provides PORT automatically
 ENV PORT=10000
 
 # Start API
-CMD uvicorn app:app --host 0.0.0.0 --port 10000
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port $PORT"]

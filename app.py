@@ -163,10 +163,16 @@ async def analyze(file: UploadFile = File(...)):
     # Deterministic hash
     file_hash = hashlib.sha256(data).hexdigest()
 
+    # Get deterministic scores
     scores = deterministic_scores(file_hash)
-    scam = int(scores["scam_score"])
-    ai_prob = int(scores["ai_probability"])
-    stress = int(scores["stress_level"])
+
+    def to_pct(x):
+        x = float(x)
+        return int(round(x * 100)) if x <= 1 else int(round(x))
+
+    scam = to_pct(scores["scam_score"])
+    ai_prob = to_pct(scores["ai_probability"])
+    stress = to_pct(scores["stress_level"])
 
     # Compose stable output (same keys always)
     out = {
